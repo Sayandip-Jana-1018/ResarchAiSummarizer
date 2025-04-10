@@ -10,7 +10,7 @@
     "setup": "node install-dependencies.js"
   },
   "dependencies": {
-    "@anthropic/sdk": "^0.17.1",
+    "@anthropic-ai/sdk": "^0.17.1",
     "@google/generative-ai": "^0.3.0",
     "@heroicons/react": "^2.2.0",
     "@hookform/resolvers": "^5.0.1",
