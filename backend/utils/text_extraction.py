@@ -30,12 +30,19 @@ try:
     # PDF processing
     import PyPDF2
     import pdfplumber
-    from pdf2image import convert_from_path
-    import pytesseract
     HAS_PDF_LIBS = True
 except ImportError:
-    logger.warning("PDF processing libraries not installed. Run: pip install PyPDF2 pdfplumber pdf2image pytesseract")
+    logger.warning("PDF processing libraries not installed. Run: pip install PyPDF2 pdfplumber")
     HAS_PDF_LIBS = False
+
+# Separate try/except for OCR-related libraries
+try:
+    from pdf2image import convert_from_path
+    import pytesseract
+    HAS_OCR_LIBS = True
+except ImportError:
+    logger.warning("OCR libraries not installed. OCR features will be disabled.")
+    HAS_OCR_LIBS = False
 
 try:
     # Document processing
@@ -50,12 +57,11 @@ except ImportError:
 
 try:
     # Image processing
-    from PIL import Image, ImageFilter, ImageEnhance
-    import pytesseract
-    HAS_IMAGE_LIBS = True
+    from PIL import Image
+    HAS_IMG_LIBS = True
 except ImportError:
-    logger.warning("Image processing libraries not installed. Run: pip install pillow pytesseract")
-    HAS_IMAGE_LIBS = False
+    logger.warning("Image processing libraries not installed. Run: pip install pillow")
+    HAS_IMG_LIBS = False
 
 try:
     # Spreadsheet processing
@@ -117,15 +123,21 @@ def extract_text_from_pdf(file_path: str) -> str:
             logger.warning(f"pdfplumber extraction failed: {e}")
     
     # Method 3: If text is still minimal, try OCR as a last resort
-    if len(text.strip()) < 100:
+    if len(text.strip()) < 100 and HAS_OCR_LIBS:
         try:
             text = ""
             images = convert_from_path(file_path)
             for i, image in enumerate(images):
                 # Enhance image for better OCR
                 image = image.convert('L')  # Convert to grayscale
-                image = ImageEnhance.Contrast(image).enhance(2.0)  # Increase contrast
-                image = image.filter(ImageFilter.SHARPEN)  # Sharpen image
+                
+                # Check if ImageEnhance is available
+                try:
+                    from PIL import ImageEnhance, ImageFilter
+                    image = ImageEnhance.Contrast(image).enhance(2.0)  # Increase contrast
+                    image = image.filter(ImageFilter.SHARPEN)  # Sharpen image
+                except ImportError:
+                    logger.warning("PIL enhancement features not available")
                 
                 # Extract text with OCR
                 page_text = pytesseract.image_to_string(image) or ""
@@ -134,6 +146,8 @@ def extract_text_from_pdf(file_path: str) -> str:
             logger.info(f"Extracted {len(text.split())} words using OCR")
         except Exception as e:
             logger.warning(f"OCR extraction failed: {e}")
+    elif len(text.strip()) < 100:
+        logger.warning("OCR libraries not available for enhanced PDF extraction")
     
     return text
 
@@ -249,8 +263,11 @@ def extract_text_from_image(file_path: str) -> str:
     Returns:
         Extracted text from the image
     """
-    if not HAS_IMAGE_LIBS:
+    if not HAS_IMG_LIBS:
         raise ImportError("Image processing libraries not installed")
+        
+    if not HAS_OCR_LIBS:
+        return "OCR libraries not available. Unable to extract text from images."
     
     try:
         logger.info(f"Processing image: {file_path}")
@@ -262,19 +279,27 @@ def extract_text_from_image(file_path: str) -> str:
         # 1. Convert to grayscale
         image = image.convert('L')
         
-        # 2. Increase contrast
-        enhancer = ImageEnhance.Contrast(image)
-        image = enhancer.enhance(2.0)
-        
-        # 3. Apply sharpening filter
-        image = image.filter(ImageFilter.SHARPEN)
+        try:
+            # 2. Increase contrast
+            from PIL import ImageEnhance, ImageFilter
+            enhancer = ImageEnhance.Contrast(image)
+            image = enhancer.enhance(2.0)
+            
+            # 3. Apply sharpening filter
+            image = image.filter(ImageFilter.SHARPEN)
+        except ImportError:
+            logger.warning("PIL enhancement features not available")
         
         # 4. Resize if too small
         if image.width < 1000 or image.height < 1000:
             scale_factor = max(1000 / image.width, 1000 / image.height)
             new_width = int(image.width * scale_factor)
             new_height = int(image.height * scale_factor)
-            image = image.resize((new_width, new_height), Image.LANCZOS)
+            try:
+                image = image.resize((new_width, new_height), Image.LANCZOS)
+            except AttributeError:
+                # LANCZOS might not be available in older PIL versions
+                image = image.resize((new_width, new_height))
         
         # Extract text using OCR
         text = pytesseract.image_to_string(image)
