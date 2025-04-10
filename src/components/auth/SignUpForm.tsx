@@ -116,7 +116,7 @@ export default function SignUpForm({ onToggleForm }: SignUpFormProps) {
           </p>
           <div className="mt-4 flex flex-col gap-3">
             <p className="text-white/70 text-sm">
-              Redirecting you to the verification page...
+              Redirecting you to the sign-in page...
             </p>
             <div className="flex justify-center">
               <div className="animate-spin h-8 w-8 border-4 border-white/20 rounded-full border-t-white"></div>

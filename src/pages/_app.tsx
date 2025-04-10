@@ -7,7 +7,7 @@ import Layout from '@/components/layout/Layout';
 import { useRouter } from 'next/router';
 
 // Pages that don't need the main layout (auth pages, etc.)
-const noLayoutPages = ['/auth/signin', '/auth/signup'];
+const noLayoutPages = ['/auth', '/auth/signin', '/auth/signup'];
 
 export default function App({ Component, pageProps }: AppProps) {
   const router = useRouter();

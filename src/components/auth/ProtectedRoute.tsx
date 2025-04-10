@@ -1,6 +1,6 @@
-import { useEffect, ReactNode } from 'react';
+import { useEffect, useState, ReactNode } from 'react';
 import { useRouter } from 'next/router';
-import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/lib/supabase';
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -8,14 +8,27 @@ interface ProtectedRouteProps {
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const router = useRouter();
-  const { user, isLoading } = useAuth();
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!isLoading && !user) {
-      // Redirect to auth page if not authenticated
-      router.push('/auth/signin');
-    }
-  }, [user, isLoading, router]);
+    const checkAuth = async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        
+        if (!data.session) {
+          // Redirect to auth page if not authenticated
+          router.push('/auth');
+        } else {
+          setIsLoading(false);
+        }
+      } catch (error) {
+        console.error('Auth check error:', error);
+        router.push('/auth');
+      }
+    };
+
+    checkAuth();
+  }, [router]);
 
   if (isLoading) {
     return (
@@ -28,6 +41,5 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
     );
   }
 
-  // Only render children if user is authenticated
-  return user ? <>{children}</> : null;
+  return <>{children}</>;
 }

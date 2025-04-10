@@ -54,8 +54,8 @@ export default function SignInForm({ onToggleForm }: SignInFormProps) {
       setEmail('');
       setPassword('');
       
-      // Redirect to home page on successful login
-      router.push('/home');
+      // Redirect to root page on successful login
+      router.push('/');
     } catch (error: any) {
       console.error('Sign in error:', error);
       setError(error.message || 'An error occurred during sign in');

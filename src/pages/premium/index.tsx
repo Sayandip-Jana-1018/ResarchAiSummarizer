@@ -324,7 +324,8 @@ export default function PremiumPage() {
           currency: 'INR',
           name: 'AI Research Summarizer',
           description: `${selectedPlan.name} Plan - ${isYearly ? 'Yearly' : 'Monthly'}`,
-          image: '/3dlogo.webp',
+          // Remove image to fix 400 error
+        // image: '/3dlogo.webp',
           prefill: {
             name: user.user_metadata?.full_name || user.email?.split('@')[0] || '',
             email: user.email || '',
@@ -553,7 +554,7 @@ export default function PremiumPage() {
                 <div className="px-6 pb-6">
                   <div className="flex justify-center items-end mb-1">
                     <span className="text-sm text-white/60 mr-1">₹</span>
-                    <span className="text-5xl font-light text-white">{plan.id === 'basic' ? '0' : plan.id === 'pro' ? '499' : '999'}</span>
+                    <span className="text-5xl font-light text-white">{plan.id === 'basic' ? '0' : plan.id === 'silver' ? '499' : '999'}</span>
                   </div>
                   <p className="text-center text-xs text-white/50 mb-6">billed {isYearly ? 'annually' : 'monthly'}</p>
                   

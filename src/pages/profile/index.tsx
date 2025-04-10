@@ -103,31 +103,121 @@ export default function Settings() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const router = useRouter();
 
+  // Helper function to process profile data and update state
+  const processProfileData = async (profileData: any, currentUser: any) => {
+    // First try to get photoUrl from profile data
+    let photoUrl = profileData.photoUrl || '';
+
+    // If no photoUrl in profile data, try to get from storage
+    if (!photoUrl) {
+      try {
+        // Check if photo exists in avatars bucket using user ID
+        const { data: fileData, error: fileError } = await supabase.storage
+          .from('avatars')
+          .list(currentUser.id);
+          
+        if (!fileError && fileData && fileData.length > 0) {
+          // Get the first file that matches the user ID
+          const fileName = `${currentUser.id}/${fileData[0].name}`;
+          const { data: urlData } = supabase.storage
+            .from('avatars')
+            .getPublicUrl(fileName);
+            
+          photoUrl = urlData?.publicUrl || '';
+        }
+      } catch (photoError) {
+        console.error('Error getting profile photo:', photoError);
+      }
+    }
+    
+    setSettings(prev => ({
+      ...prev,
+      profile: {
+        ...prev.profile,
+        full_name: profileData.full_name || '',
+        email: profileData.email || currentUser.email || '',
+        phone: profileData.phone || '',
+        bio: profileData.bio || '',
+        role: profileData.role || 'Member',
+        photoUrl: photoUrl
+      }
+    }));
+  };
+
   // Get user from Supabase
   const [user, setUser] = useState<any>(null);
-
-  // Check if user is authenticated
+  
+  // Check if user is authenticated and fetch profile data
   useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        // For development purposes, we'll create a mock user instead of redirecting
-        setIsAuthenticated(false);
-        setUser({
-          id: 'mock-user-id',
-          email: 'user@example.com'
-        });
+    const checkAuthAndFetchProfile = async () => {
+      try {
+        // Get current session
+        const { data: { session } } = await supabase.auth.getSession();
         
-        // In production, you would redirect to login:
-        // router.push('/auth/signin');
-      } else {
-        setIsAuthenticated(true);
-        setUser(session.user);
+        if (!session) {
+          // For development purposes, we'll create a mock user instead of redirecting
+          setIsAuthenticated(false);
+          setUser({
+            id: 'mock-user-id',
+            email: 'user@example.com'
+          });
+          
+          // In production, you would redirect to login:
+          // router.push('/auth');
+        } else {
+          setIsAuthenticated(true);
+          const currentUser = session.user;
+          setUser(currentUser);
+          
+          console.log('User authenticated, fetching profile for user ID:', currentUser.id);
+          
+          // Get profile data
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', currentUser.id)
+            .single();
+            
+          if (error) {
+            console.log('Error fetching profile:', error);
+            
+            // If profile doesn't exist, create one
+            if (error.code === 'PGRST116') {
+              console.log('Profile not found, creating new profile');
+              
+              // Create new profile
+              const { error: insertError, data: insertData } = await supabase
+                .from('profiles')
+                .insert({
+                  id: currentUser.id,
+                  full_name: currentUser.user_metadata?.full_name || 'New User',
+                  email: currentUser.email,
+                  phone: '',
+                  bio: '',
+                  role: 'Member'
+                })
+                .select();
+                
+              if (insertError) {
+                console.error('Error creating profile:', insertError);
+              } else if (insertData && insertData.length > 0) {
+                console.log('Profile created successfully:', insertData[0]);
+                // Process the newly created profile data
+                processProfileData(insertData[0], currentUser);
+              }
+            }
+          } else if (data) {
+            console.log('Profile data retrieved:', data);
+            // Process the retrieved profile data
+            processProfileData(data, currentUser);
+          }
+        }
+      } catch (error) {
+        console.error('Error in checkAuthAndFetchProfile:', error);
       }
     };
     
-    checkAuth();
+    checkAuthAndFetchProfile();
   }, []);
 
   // Create profile if it doesn't exist
@@ -136,6 +226,7 @@ export default function Settings() {
       if (!user) return;
       
       try {
+        console.log('Checking if profile exists for user ID:', user.id);
         // Check if profile exists
         const { data, error } = await supabase
           .from('profiles')
@@ -146,7 +237,7 @@ export default function Settings() {
         if (error && error.code === 'PGRST116') {
           console.log('Profile not found, creating new profile for user:', user.id);
           // Profile doesn't exist, create one
-          const { error: insertError } = await supabase
+          const { error: insertError, data: insertData } = await supabase
             .from('profiles')
             .insert({
               id: user.id,
@@ -155,17 +246,11 @@ export default function Settings() {
               phone: '',
               bio: '',
               role: 'Member'
-            });
+            })
+            .select();
             
           if (insertError) {
             console.error('Error creating profile:', insertError);
-            // If it's a duplicate key error, the profile already exists (race condition)
-            if (insertError.message.includes('duplicate key') || insertError.code === '23505') {
-              console.log('Profile already exists (duplicate key). This is likely a race condition.');
-              // No need to alert the user about this
-            } else {
-              alert('Error creating profile: ' + insertError.message);
-            }
           } else {
             console.log('Profile created successfully');
           }

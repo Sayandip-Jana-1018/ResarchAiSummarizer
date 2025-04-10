@@ -1,180 +1,139 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import { supabase } from '@/lib/supabase';
+import Head from 'next/head';
 import GlassmorphicCard from '@/components/auth/GlassmorphicCard';
-import { useTheme } from '@/context/ThemeContext';
 import ThreeBackground from '@/components/auth/ThreeBackground';
-import CustomFonts from '@/components/auth/CustomFonts';
+import { useTheme } from '@/context/ThemeContext';
+import { supabase } from '@/lib/supabase';
+import { motion } from 'framer-motion';
+import ThemeSelector from '@/components/ThemeSelector';
 
-export default function VerifyPage() {
-  const [email, setEmail] = useState<string | null>(null);
-  const [verifying, setVerifying] = useState(true);
-  const [verified, setVerified] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export default function VerifyEmail() {
   const router = useRouter();
   const { themeColor } = useTheme();
+  const [countdown, setCountdown] = useState(10);
+  const [verificationChecked, setVerificationChecked] = useState(false);
+  const [isVerified, setIsVerified] = useState(false);
 
+  // Check if user is already verified
   useEffect(() => {
-    // Get email from localStorage
-    const storedEmail = localStorage.getItem('pendingVerificationEmail');
-    if (storedEmail) {
-      setEmail(storedEmail);
-    }
-
-    // Check if this is a redirect back from Supabase auth
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN') {
-        // User has been verified and signed in
-        setVerified(true);
-        setVerifying(false);
-        
-        // Clear the stored email
-        localStorage.removeItem('pendingVerificationEmail');
-        
-        // Redirect to home after a delay
-        setTimeout(() => {
-          router.push('/');
-        }, 2000);
-      } else if (event === 'USER_UPDATED') {
-        // User has been updated (email verified)
-        setVerified(true);
-        setVerifying(false);
+    const checkVerification = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data.session) {
+        setIsVerified(true);
+        // If already verified, redirect to home page
+        router.push('/home');
       }
-    });
-
-    // If we have a token in the URL, the user clicked the email link
-    const hash = window.location.hash;
-    if (hash && hash.includes('access_token')) {
-      setVerifying(true);
-      // The auth state change listener above will handle the verification
-    } else {
-      // Not a redirect from email verification
-      setVerifying(false);
-    }
-
-    return () => {
-      authListener.subscription.unsubscribe();
+      setVerificationChecked(true);
     };
+
+    checkVerification();
   }, [router]);
 
+  // Countdown timer
+  useEffect(() => {
+    if (!verificationChecked || isVerified) return;
+
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          router.push('/auth');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [router, verificationChecked, isVerified]);
+
+  // Handle manual resend verification
   const handleResendVerification = async () => {
+    const email = localStorage.getItem('pendingVerificationEmail');
     if (!email) {
-      setError('No email found. Please go back to sign up.');
+      alert('Please go back to sign up to resend verification email');
       return;
     }
 
     try {
-      setVerifying(true);
       const { error } = await supabase.auth.resend({
         type: 'signup',
         email,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/verify`
-        }
+          emailRedirectTo: `${window.location.origin}/auth/verify`,
+        },
       });
 
       if (error) throw error;
-
-      alert('Verification email has been resent. Please check your inbox.');
+      alert('Verification email resent successfully!');
     } catch (error: any) {
-      setError(error.message || 'Failed to resend verification email');
-    } finally {
-      setVerifying(false);
+      alert(`Error: ${error.message || 'Failed to resend verification email'}`);
     }
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center relative overflow-hidden">
-      <CustomFonts />
-      
-      {/* Background with Three.js animation */}
+    <>
+      <Head>
+        <title>Verify Your Email | ResarchSummarizer~Ai</title>
+        <meta name="description" content="Please verify your email to continue" />
+      </Head>
+
+      {/* 3D ThreeJS Background */}
       <ThreeBackground />
-      
-      {/* Background gradient */}
-      <div 
-        className="fixed inset-0 z-0"
-        style={{
-          background: `radial-gradient(circle at top right, ${themeColor}33, rgba(0, 0, 0, 0.9))`
-        }}
-      />
-      
-      {/* Decorative elements */}
-      <div className="fixed top-20 right-20 w-40 h-40 rounded-full bg-white/5 backdrop-blur-sm z-0" />
-      <div className="fixed bottom-20 left-20 w-60 h-60 rounded-full bg-white/5 backdrop-blur-sm z-0" />
-      <div 
-        className="fixed top-1/3 left-1/4 w-80 h-80 rounded-full opacity-20 blur-3xl z-0"
-        style={{ background: `radial-gradient(circle, ${themeColor}44 0%, transparent 70%)` }}
-      />
-      
-      
-      {/* Verification card */}
-      <div className="relative z-10 w-full max-w-md">
-        <GlassmorphicCard className="w-full">
-          {verified ? (
-            <div className="text-center space-y-6">
-              <div className="flex justify-center">
-                <div className="rounded-full bg-green-500/20 p-3">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
+
+      {/* Main content */}
+      <div className="min-h-screen flex flex-col items-center justify-center px-4 py-12">
+        <motion.div 
+          className="w-full max-w-md"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <GlassmorphicCard>
+            <div className="text-center">
+              <div className="w-20 h-20 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
               </div>
-              <h2 className="text-2xl font-bold text-white">Email Verified!</h2>
-              <p className="text-white/70">
-                Your email has been successfully verified. You will be redirected to the dashboard shortly.
-              </p>
-              <div className="flex justify-center">
-                <div className="animate-spin h-8 w-8 border-4 border-white/20 rounded-full border-t-white"></div>
-              </div>
-            </div>
-          ) : verifying ? (
-            <div className="text-center space-y-6">
-              <div className="flex justify-center">
-                <div className="animate-spin h-12 w-12 border-4 border-white/20 rounded-full border-t-white"></div>
-              </div>
-              <h2 className="text-2xl font-bold text-white">Verifying Email</h2>
-              <p className="text-white/70">
-                Please wait while we verify your email address...
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              <h2 className="text-2xl font-bold text-white text-center">Verify Your Email</h2>
-              <p className="text-white/70 text-center">
-                We've sent a verification link to {email || 'your email'}. Please check your inbox and click the link to verify your account.
+              <h1 className="text-2xl font-bold text-white mb-3">Verify Your Email</h1>
+              <p className="text-white/80 mb-6">
+                We've sent a verification link to your email address. Please check your inbox and click the link to activate your account.
               </p>
               
-              {error && (
-                <div className="bg-red-500/20 border border-red-500/50 text-white rounded-lg p-3 text-sm">
-                  {error}
-                </div>
-              )}
-              
-              <div className="space-y-4">
-                <p className="text-white/70 text-center text-sm">
-                  Didn't receive the email? Check your spam folder or click below to resend.
+              <div className="mt-8 p-5 bg-white/5 rounded-lg border border-white/10">
+                <h3 className="text-white font-medium mb-2">Didn't receive an email?</h3>
+                <p className="text-white/70 text-sm mb-4">
+                  Check your spam folder or click below to resend the verification email.
                 </p>
-                <div className="flex justify-center">
-                  <button
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <button 
                     onClick={handleResendVerification}
-                    className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-all"
+                    className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-all"
                   >
-                    Resend Verification Email
+                    Resend Verification
                   </button>
-                </div>
-                <div className="text-center">
-                  <button
-                    onClick={() => router.push('/auth/signin')}
-                    className="text-white/70 hover:text-white text-sm"
+                  <button 
+                    onClick={() => router.push('/auth')}
+                    className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white text-sm font-medium transition-all"
                   >
                     Back to Sign In
                   </button>
                 </div>
               </div>
+              
+              <div className="mt-8 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-full border-2 border-white/20 border-t-white animate-spin mr-3"></div>
+                <p className="text-white/60 text-sm">
+                  Redirecting to sign in page in {countdown} seconds...
+                </p>
+              </div>
             </div>
-          )}
-        </GlassmorphicCard>
+          </GlassmorphicCard>
+        </motion.div>
+        <ThemeSelector/>
       </div>
-    </div>
+    </>
   );
 }
