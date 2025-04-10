@@ -1,11 +1,13 @@
-export interface CameraSettingsType {
-  deviceId: string;
-  audioDeviceId: string;
-  videoEnabled: boolean;
-  audioEnabled: boolean;
-  resolution: {
-    width: number;
-    height: number;
+// Define interfaces for analysis results
+export interface AnalysisResult {
+  status: string;
+  text: string;
+  analysis: {
+    summary: string;
+    key_points: string[];
+    entities: string[];
+    sentiment: string;
+    topics: string[];
   };
-  frameRate: number;
+  word_count: number;
 }
