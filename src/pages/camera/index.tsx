@@ -24,12 +24,12 @@ import {
   HiClipboardCopy,
   HiDownload
 } from 'react-icons/hi';
-import CameraSettings from './components/CameraSettings';
-import AnalysisResults from './components/AnalysisResults';
-import CameraFeed from './components/CameraFeed';
-import CameraTips from './components/CameraTips';
-import ProcessingStatus from './components/ProcessingStatus';
-import RecentCaptures from './components/RecentCaptures';
+import CameraSettings from '@/components/camera/CameraSettings';
+import AnalysisResults from '@/components/camera/AnalysisResults';
+import CameraFeed from '@/components/camera/CameraFeed';
+import CameraTips from '@/components/camera/CameraTips';
+import ProcessingStatus from '@/components/camera/ProcessingStatus';
+import RecentCaptures from '@/components/camera/RecentCaptures';
 
 // Define types inline
 interface AnalysisResult {
