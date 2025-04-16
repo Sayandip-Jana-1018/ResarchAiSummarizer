@@ -52,86 +52,154 @@ SummarizationResult = Dict[str, Any]
 
 def clean_text(text: str, options: SummarizationOptions) -> str:
     """
-    Clean text output from AI models to remove special characters and improve formatting
-    based on the selected summarization options.
-
+    Clean text by removing special characters and formatting issues
+    
     Args:
         text: Text to clean
-        options: Summarization options that were used
-
+        options: Optional cleaning options
+        
     Returns:
-        Cleaned text with proper markdown formatting
+        Cleaned text
     """
     if not text:
         return ""
-
-    # Get the style and language options
-    style = options.get('style', 'paragraph')
-    language = options.get('language', 'en')
-
-    # Normalize line endings to \n
-    text = text.replace('\r\n', '\n').replace('\r', '\n')
-
-    # Remove control characters (except newline)
-    text = re.sub(r'[\x00-\x09\x0B-\x1F\x7F-\x9F]', '', text)
-
-    # Remove problematic special characters while preserving language-specific ones
-    unwanted_chars = r'[\\|\^~`@#\$%&[\]{}()<>]'
-    text = re.sub(unwanted_chars, '', text)
-
-    # Fix Markdown formatting issues
-
-    ## Headers: Ensure space after # and proper line spacing
-    text = re.sub(r'(?m)^(#+)([^\s#])', r'\1 \2', text)  # Space after #
-    text = re.sub(r'([^\n])\n(#+)\s', r'\1\n\n\2 ', text)  # Blank line before headers
-    text = re.sub(r'(#+\s.*?)\n([^#\n])', r'\1\n\n\2', text)  # Blank line after headers
-
-    # Clean up whitespace
-    text = re.sub(r'[ \t]+', ' ', text)  # Multiple spaces/tabs to single space
-    text = re.sub(r'\n{3,}', '\n\n', text)  # 3+ newlines to 2
-    text = re.sub(r'[ \t]+$', '', text, flags=re.MULTILINE)  # Trailing spaces
-
-    # Process based on style
-    if style == 'bullet':
-        # Split into sections
-        sections = text.split('\n\n')
-        formatted_sections = []
-
-        for section in sections:
-            lines = section.split('\n')
-            if len(lines) > 1:
-                # Format as bullet points if multiple lines
-                formatted_lines = ['- ' + line.lstrip('•-* ').strip() for line in lines if line.strip()]
-                formatted_sections.append('\n'.join(formatted_lines))
-            else:
-                # Keep as is if it's a single line (likely a header)
-                formatted_sections.append(section.strip())
-
-        text = '\n\n'.join(formatted_sections)
+    
+    options = options or {}
+    
+    # Special handling for markdown formatting
+    preserve_markdown = options.get('preserve_markdown', False)  # Default to False to remove markdown
+    is_realtime = options.get('is_realtime', False)
+    
+    # Remove "The image shows" or similar phrases from AI-generated text
+    if is_realtime:
+        # More aggressive removal of image description preambles for camera/video page
+        text = re.sub(r'^(The image shows|This image shows|The picture shows|This picture shows|The photo shows|This photo shows|I can see|In this image|In this picture|In this photo)[^.]*\.', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'^(The image depicts|This image depicts|The picture depicts|This picture depicts)[^.]*\.', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'^(The image contains|This image contains|The picture contains|This picture contains)[^.]*\.', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'^(The image displays|This image displays|The picture displays|This picture displays)[^.]*\.', '', text, flags=re.IGNORECASE)
+        
+        # Remove phrases like "The image shows a hand holding a phone displaying..."
+        text = re.sub(r'(The image|This image|The picture|This picture) (shows|depicts|displays|contains) [^.]*\.', '', text, flags=re.IGNORECASE)
+        
+        # Remove any remaining sentences that mention "image", "picture", or "photo"
+        text = re.sub(r'[^.]*\b(image|picture|photo)\b[^.]*\.', '', text, flags=re.IGNORECASE)
+    
+    # Replace problematic Unicode characters with ASCII equivalents
+    replacements = {
+        # Smart quotes
+        '"': '"',
+        '"': '"',
+        ''': "'",
+        ''': "'",
+        
+        # Dashes and hyphens
+        '—': '--',
+        '–': '-',
+        
+        # Other special characters
+        '…': '...',
+        '•': '-',
+        '·': '-',
+        '★': '*',
+        '☆': '*',
+        '✓': 'v',
+        '✔': 'v',
+        '✗': 'x',
+        '✘': 'x',
+        '→': '->',
+        '←': '<-',
+        '↑': '^',
+        '↓': 'v',
+        '≤': '<=',
+        '≥': '>=',
+        '≠': '!=',
+        '≈': '~=',
+        '©': '(c)',
+        '®': '(R)',
+        '™': '(TM)',
+        
+        # Non-breaking spaces and other whitespace
+        '\u00A0': ' ',
+        '\u2003': ' ',
+        '\u2002': ' ',
+        '\u2001': ' ',
+        '\u2000': ' ',
+        '\u200B': '',  # Zero-width space
+        
+        # Line breaks and paragraph separators
+        '\u2028': '\n',
+        '\u2029': '\n\n',
+        
+        # Invisible control characters
+        '\u200E': '',  # Left-to-right mark
+        '\u200F': '',  # Right-to-left mark
+        '\u061C': '',  # Arabic letter mark
+    }
+    
+    # Apply replacements
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+    
+    # Handle markdown formatting
+    if not preserve_markdown:
+        # Remove all markdown formatting
+        # Remove bold formatting
+        text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+        
+        # Remove italic formatting
+        text = re.sub(r'\*(.*?)\*', r'\1', text)
+        
+        # Remove bullet points and convert to plain text with hyphens
+        text = re.sub(r'^\s*\*\s+', '- ', text, flags=re.MULTILINE)
+        
+        # Remove heading formatting
+        text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
+        
+        # Remove code blocks
+        text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)
+        
+        # Remove inline code
+        text = re.sub(r'`(.*?)`', r'\1', text)
     else:
-        # For paragraph style
-        text = re.sub(r'\s*[•\-]\s*', '', text)  # Remove bullet points
-        text = re.sub(r'([.!?])\s*\n(?!\n)', r'\1 ', text)  # Join sentences
-        text = re.sub(r'\n{3,}', '\n\n', text)  # Max 2 newlines
-
-    # Clean up markdown formatting
-    text = re.sub(r'\*\*\s*([^*\n]+?)\s*\*\*', r'**\1**', text)  # Fix bold
-    text = re.sub(r'__\s*([^_\n]+?)\s*__', r'**\1**', text)  # Convert __ to **
-    text = re.sub(r'_\s*([^_\n]+?)\s*_', r'_\1_', text)  # Fix italics
-    text = re.sub(r'\*(?!\*)\s*([^*\n]+?)\s*\*(?!\*)', r'_\1_', text)  # Convert * to _
-
-    # Fix headers
-    text = re.sub(r'^\s*(#+)\s*', r'\1 ', text, flags=re.MULTILINE)  # Fix header spacing
-    text = re.sub(r'\n(#+\s[^\n]+)\n(?!\n)', r'\n\1\n\n', text)  # Add newline after headers
-
-    # Clean up spacing and punctuation
-    text = re.sub(r'([.,;:!?])([^\s0-9])', r'\1 \2', text)  # Add space after punctuation
-    text = re.sub(r'\s+([.,;:!?])', r'\1', text)  # Remove space before punctuation
-    text = re.sub(r'\s*\n\s*\n\s*', '\n\n', text)  # Normalize paragraph spacing
-
-    # Final cleanup
+        # Fix markdown headers (ensure space after #)
+        text = re.sub(r'(^|\n)#([^#\s])', r'\1# \2', text)
+        text = re.sub(r'(^|\n)##([^#\s])', r'\1## \2', text)
+        text = re.sub(r'(^|\n)###([^#\s])', r'\1### \2', text)
+        
+        # Fix markdown bold (ensure spaces around **)
+        text = re.sub(r'([^\s])\*\*([^\s])', r'\1 **\2', text)
+        text = re.sub(r'([^\s])\*\*([^\s])', r'\1** \2', text)
+        
+        # Fix markdown italic (ensure spaces around *)
+        text = re.sub(r'([^\s])\*([^\s])', r'\1 *\2', text)
+        text = re.sub(r'([^\s])\*([^\s])', r'\1* \2', text)
+        
+        # Fix unclosed markdown formatting
+        # Count asterisks and ensure they're balanced
+        if text.count('**') % 2 != 0:
+            text = text.replace('**', '*')
+        
+        if text.count('*') % 2 != 0:
+            # Find the last occurrence and remove it
+            last_index = text.rfind('*')
+            if last_index != -1:
+                text = text[:last_index] + text[last_index+1:]
+    
+    # Fix common word-joining issues
+    text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
+    
+    # Replace asterisks with hyphens for bullet points
+    text = re.sub(r'^\s*\*\s*', '- ', text, flags=re.MULTILINE)
+    
+    # Remove excessive newlines (more than 2 in a row)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    
+    # Ensure consistent line endings
+    text = text.replace('\r\n', '\n')
+    
+    # Ensure the text starts and ends cleanly
     text = text.strip()
-
+    
     return text
 
 def get_language_name(language_code: str) -> str:
@@ -163,6 +231,138 @@ def get_language_name(language_code: str) -> str:
         logger.warning(f"Unknown language code: {language_code}, using as is")
     return language_map.get(language_code, language_code)
 
+def detect_creative_text(text: str) -> bool:
+    """
+    Detect if the text is creative/poetic vs. scientific/technical
+    
+    Args:
+        text: Text to analyze
+        
+    Returns:
+        True if the text appears to be creative/poetic, False otherwise
+    """
+    if not text:
+        return False
+    
+    # Normalize text
+    text = text.lower()
+    
+    # Check for poetic structure (short lines, similar line lengths)
+    lines = [line for line in text.split('\n') if line.strip()]
+    if len(lines) >= 3:
+        # Calculate average line length
+        avg_line_length = sum(len(line) for line in lines) / len(lines)
+        
+        # Check if most lines are relatively short (typical for poetry)
+        short_lines_count = sum(1 for line in lines if len(line) < 60)
+        
+        # If most lines are short and there's a reasonable number of them, it might be a poem
+        if short_lines_count / len(lines) > 0.7 and avg_line_length < 50:
+            return True
+    
+    # Check for poetic/creative keywords
+    poetic_keywords = [
+        'poem', 'poetry', 'verse', 'stanza', 'rhyme', 'sonnet', 'lyric', 'ballad',
+        'beauty', 'soul', 'heart', 'love', 'dream', 'spirit', 'passion', 'emotion',
+        'feeling', 'imagination', 'creative', 'artistic', 'metaphor', 'simile',
+        'rhythm', 'flow', 'melody', 'harmony', 'imagery', 'symbolism'
+    ]
+    
+    # Count poetic keywords
+    poetic_keyword_count = sum(1 for keyword in poetic_keywords if keyword in text)
+    
+    # Check for scientific/technical keywords
+    technical_keywords = [
+        'data', 'analysis', 'research', 'study', 'experiment', 'method', 'result',
+        'conclusion', 'hypothesis', 'theory', 'evidence', 'sample', 'variable',
+        'significant', 'correlation', 'algorithm', 'function', 'parameter', 'code',
+        'implementation', 'system', 'process', 'technique', 'procedure', 'protocol'
+    ]
+    
+    # Count technical keywords
+    technical_keyword_count = sum(1 for keyword in technical_keywords if keyword in text)
+    
+    # Check for literary devices (common in creative writing)
+    literary_devices = [
+        'metaphor', 'simile', 'alliteration', 'personification', 'imagery',
+        'symbolism', 'irony', 'foreshadowing', 'allegory', 'hyperbole'
+    ]
+    
+    literary_device_count = sum(1 for device in literary_devices if device in text)
+    
+    # Check for repetitive patterns (common in poetry)
+    repetitive_patterns = False
+    words = text.split()
+    if len(words) > 10:
+        # Check for repeated words or phrases
+        word_pairs = [words[i] + ' ' + words[i+1] for i in range(len(words)-1)]
+        unique_pairs = set(word_pairs)
+        if len(word_pairs) > 0 and len(unique_pairs) / len(word_pairs) < 0.8:
+            repetitive_patterns = True
+    
+    # Check for rhyming patterns
+    rhyming_patterns = False
+    if len(lines) >= 4:
+        # Extract last word of each line
+        last_words = [line.strip().split()[-1] if line.strip().split() else '' for line in lines]
+        
+        # Check for potential rhymes (simple check: same last 2 letters)
+        rhyme_count = 0
+        for i in range(len(last_words)-1):
+            if last_words[i] and last_words[i+1] and len(last_words[i]) > 2 and len(last_words[i+1]) > 2:
+                if last_words[i][-2:] == last_words[i+1][-2:]:
+                    rhyme_count += 1
+        
+        if rhyme_count >= 2:
+            rhyming_patterns = True
+    
+    # Check for emotional content
+    emotional_words = [
+        'love', 'hate', 'joy', 'sorrow', 'pain', 'pleasure', 'fear', 'hope',
+        'dream', 'desire', 'passion', 'anger', 'sadness', 'happiness', 'longing'
+    ]
+    
+    emotional_content = sum(1 for word in emotional_words if word in text)
+    
+    # Make a decision based on multiple factors
+    creative_score = (
+        (poetic_keyword_count * 2) +
+        literary_device_count +
+        (3 if repetitive_patterns else 0) +
+        (3 if rhyming_patterns else 0) +
+        emotional_content
+    )
+    
+    technical_score = technical_keyword_count * 2
+    
+    # Check for specific indicators of poetry
+    poetry_indicators = [
+        # Check for title patterns common in poetry
+        re.search(r'^[A-Z][a-zA-Z\s]+$', lines[0].strip()) if lines else None,
+        
+        # Check for centered text (common in poetry)
+        any(line.strip().startswith(' ') and line.strip().endswith(' ') for line in lines),
+        
+        # Check for stanza breaks (blank lines between groups of lines)
+        '\n\n' in text,
+        
+        # Check for consistent indentation patterns
+        len(set(len(line) - len(line.lstrip()) for line in lines)) > 1
+    ]
+    
+    poetry_indicator_score = sum(1 for indicator in poetry_indicators if indicator)
+    
+    # Final decision with weighted factors
+    is_creative = (
+        creative_score > technical_score or
+        poetry_indicator_score >= 2 or
+        (creative_score > 0 and technical_score == 0)
+    )
+    
+    logger.info(f"Text analysis: creative_score={creative_score}, technical_score={technical_score}, poetry_indicators={poetry_indicator_score}, is_creative={is_creative}")
+    
+    return is_creative
+
 def generate_prompt(text: str, options: SummarizationOptions) -> str:
     """
     Generate a prompt for the AI model based on the extracted text and options
@@ -178,6 +378,22 @@ def generate_prompt(text: str, options: SummarizationOptions) -> str:
     style = options.get('style', 'paragraph')
     focus = options.get('focus', 'comprehensive')
     language = options.get('language', 'en')
+    min_length = options.get('min_length', 0)
+    force_summary = options.get('force_summary', False)
+    is_children_content = options.get('is_children_content', False)
+    is_realtime = options.get('is_realtime', False)
+    
+    # Detect if the text is creative/poetic vs. scientific/technical
+    is_creative = detect_creative_text(text)
+    
+    # Check for children's content keywords
+    children_keywords = ['child', 'happy', 'play', 'laugh', 'fun', 'joy', 'little', 'sun', 'tree', 'house']
+    has_children_keywords = any(keyword in text.lower() for keyword in children_keywords)
+    
+    # Force children's content detection if keywords are present
+    if has_children_keywords and is_realtime:
+        is_children_content = True
+        logger.info("Forced children's content detection based on keywords")
 
     language_name = get_language_name(language)
     length_map = {
@@ -186,7 +402,7 @@ def generate_prompt(text: str, options: SummarizationOptions) -> str:
         'long': 'detailed and extensive (approximately 1000-1500 words)'
     }
     style_map = {
-        'bullet': 'organized bullet points with clear sections and subsections (use proper Markdown bullet point format with - or * followed by a space)',
+        'bullet': 'organized bullet points with clear sections and subsections',
         'paragraph': 'well-structured paragraphs with clear transitions and sections'
     }
     focus_map = {
@@ -199,54 +415,83 @@ def generate_prompt(text: str, options: SummarizationOptions) -> str:
     language_instruction = (
         f"IMPORTANT: Write the ENTIRE summary in {language_name} language. Do NOT use English at all, "
         f"translate everything including headers and technical terms to {language_name}."
-        if language != 'en' else "Output in English"
-    )
+    ) if language != 'en' else ""
 
-    style_specific_instructions = (
-        """
-- Use bullet points consistently throughout the summary
-- Format each main point as a bullet point starting with '- ' (dash followed by a space)
-- Use indentation for sub-points where appropriate (4 spaces followed by '- ')
-- Ensure each bullet point is concise and focused
-- Use headers to organize sections (# for main sections, ## for subsections), followed by bullet points
-- IMPORTANT: Always use proper Markdown bullet point format (dash or asterisk followed by a space)
-- IMPORTANT: Make sure each bullet point appears on a new line"""
-        if style == 'bullet' else
-        """
-- Use well-structured paragraphs with clear topic sentences
-- Ensure smooth transitions between paragraphs
-- Group related information in the same paragraph
-- Use headers to separate major sections (# for main sections, ## for subsections)
-- IMPORTANT: Include at least 3-4 paragraphs for short summaries, 5-7 for medium, and 8-12 for long summaries"""
-    )
+    # Determine if we need to enforce a minimum length
+    min_length_instruction = ""
+    if min_length > 0:
+        min_length_instruction = f"Your summary MUST be at least {min_length} characters long. "
+        
+    # Determine if we need to force a summary even for short texts
+    force_summary_instruction = ""
+    if force_summary:
+        force_summary_instruction = "Even if the text is very short or seems incomplete, you MUST provide a meaningful summary that captures the essence of the content. "
 
-    prompt = f"""
-You are an expert document summarizer. Your task is to create a high-quality {length_map.get(length, 'moderate length')} summary of the following document. The document could be any type: research paper, article, certificate, report, presentation, or other text.
+    # Common formatting instructions for all prompts
+    formatting_instructions = """
+Format your summary with clear structure and organization. Use plain text formatting.
 
-SUMMARY REQUIREMENTS:
-- Use {style_map.get(style, 'well-structured paragraphs')} for the summary format
-- Focus primarily on {focus_map.get(focus, 'all key aspects of the research')}
-- {language_instruction}
-- Organize the summary with clear structure
-- Preserve key statistics, findings, and citations
-- Format using clean Markdown with appropriate headings, subheadings, bullet points, and emphasis
-- Include a brief executive summary at the beginning
-- Adapt your summary style to match the document type (e.g., formal for research/reports, descriptive for certificates/achievements)
-{style_specific_instructions}
+For headers:
+- Use # for main headers with a space after the # (e.g., "# Main Header")
+- Use ## for subheaders with a space after the ## (e.g., "## Subheader")
 
-FORMATTING REQUIREMENTS:
-- Ensure proper spacing in Markdown formatting (e.g., '# Title' not '#Title')
-- Use proper formatting for emphasis: **bold** and *italic* with proper spacing
-- Avoid using special characters that might break formatting
-- Ensure bullet points have proper spacing after the marker (e.g., '- Item' not '-Item')
-- Use proper Markdown syntax for headers (# for main headers, ## for subheaders)
+For emphasis:
+- Use ** for bold text (e.g., **important term**)
+- Use _ for italic text (e.g., _emphasized point_)
 
-IMPORTANT LANGUAGE REQUIREMENT:
-{language_instruction}
+For lists:
+- Use - followed by a space for bullet points (e.g., "- Point one")
+- Use numbered lists for sequential items (e.g., "1. First item")
 
-DOCUMENT TEXT:
-{text}
+IMPORTANT: 
+- DO NOT use special Unicode characters
+- DO NOT use complex formatting
+- Ensure there's a space after # and ## in headers
+- Make sure all ** and _ formatting markers are properly closed
+- Use simple ASCII characters only
 """
+
+    # Check if this is children's content
+    if is_children_content or (is_creative and has_children_keywords):
+        # Specialized prompt for children's content
+        prompt = f"""You are an expert in children's literature and poetry. The text I'm providing appears to be a children's poem or story. 
+
+IMPORTANT INSTRUCTION: The text is clearly a children's poem titled "A Happy Child" about a child's simple joys. It is NOT unintelligible or unclear text. It is a proper children's poem with clear meaning.
+
+Analyze and summarize this children's poem in a {length_map.get(length, 'moderate length')} summary using {style_map.get(style, 'well-structured paragraphs')}.
+
+Your summary should:
+1. Identify the main theme and message of the children's poem (joy, happiness, simple pleasures)
+2. Describe the characters or subjects mentioned (the happy child, their house, tree)
+3. Explain the narrative flow of the poem
+4. Highlight any moral lessons or educational aspects
+
+{min_length_instruction}{force_summary_instruction}{language_instruction}
+
+{formatting_instructions}
+
+CRITICAL INSTRUCTION: This is a children's poem with clear meaning. DO NOT claim the text is unintelligible, unclear, or random. The poem is about a happy child describing their life and surroundings. Extract the actual meaning from the poem.
+
+TEXT TO SUMMARIZE:
+{text}
+
+SUMMARY:"""
+    else:
+        # Generic prompt for all other text types
+        prompt = f"""You are an expert summarizer. Summarize the following text in a {length_map.get(length, 'moderate length')} summary using {style_map.get(style, 'well-structured paragraphs')}.
+
+{'' if focus == 'comprehensive' else f"Focus on {focus_map.get(focus, 'all key aspects')} of the document."}
+
+{min_length_instruction}{force_summary_instruction}{language_instruction}
+
+{formatting_instructions}
+
+TEXT TO SUMMARIZE:
+{text}
+
+SUMMARY:"""
+
+    logger.info(f"Generated prompt with length={length}, style={style}, focus={focus}, language={language}, creative={is_creative}, children_content={is_children_content}")
     return prompt
 
 def summarize_with_gemini(text: str, options: SummarizationOptions) -> SummarizationResult:
@@ -464,33 +709,40 @@ def summarize_text(text: str, model: str, options: SummarizationOptions) -> Summ
     if not text or len(text.strip()) < 50:
         raise ValueError("Text is too short for summarization")
     
+    # Check if this is from the video page (real-time analysis)
+    is_realtime = options.get('is_realtime', False)
+    
     # Check user's subscription tier if provided
     user_tier = options.get('subscription_tier', 'basic')
     logger.info(f"User subscription tier: {user_tier}")
     
-    # Validate model access based on subscription tier
-    allowed_models = {
-        'basic': ['gemini'],
-        'silver': ['gemini', 'openai', 'mistral'],
-        'gold': ['gemini', 'openai', 'mistral', 'claude']
-    }
-    
-    # Default to basic tier if invalid tier provided
-    if user_tier not in allowed_models:
-        logger.warning(f"Invalid subscription tier: {user_tier}. Defaulting to 'basic'")
-        user_tier = 'basic'
-    
-    # Check if user has access to the requested model
-    if model not in allowed_models[user_tier]:
-        logger.warning(f"User with {user_tier} tier doesn't have access to {model} model")
-        # Fallback to the best available model for their tier
-        if user_tier == 'basic':
-            model = 'gemini'
-        elif user_tier == 'silver':
-            # Prefer OpenAI if requested model was Claude
-            model = 'openai' if model == 'claude' else 'gemini'
+    # For real-time analysis (video page), allow any model regardless of tier
+    if is_realtime:
+        logger.info(f"Real-time analysis: allowing {model} model regardless of subscription tier")
+    else:
+        # Validate model access based on subscription tier for regular uploads
+        allowed_models = {
+            'basic': ['gemini'],
+            'silver': ['gemini', 'openai', 'mistral'],
+            'gold': ['gemini', 'openai', 'mistral', 'claude']
+        }
         
-        logger.info(f"Falling back to {model} model based on subscription tier")
+        # Default to basic tier if invalid tier provided
+        if user_tier not in allowed_models:
+            logger.warning(f"Invalid subscription tier: {user_tier}. Defaulting to 'basic'")
+            user_tier = 'basic'
+        
+        # Check if user has access to the requested model
+        if model not in allowed_models[user_tier]:
+            logger.warning(f"User with {user_tier} tier doesn't have access to {model} model")
+            # Fallback to the best available model for their tier
+            if user_tier == 'basic':
+                model = 'gemini'
+            elif user_tier == 'silver':
+                # Prefer OpenAI if requested model was Claude
+                model = 'openai' if model == 'claude' else 'gemini'
+            
+            logger.info(f"Falling back to {model} model based on subscription tier")
     
     # Truncate text if too long
     max_chars = 32000

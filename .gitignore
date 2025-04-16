@@ -14,6 +14,13 @@
 # production
 /build
 
+backend/myvenv
+backend/app/__pycache__/
+backend/app/api/__pycache__/
+backend/bin/
+backend/models/__pycache__/
+backend/utils/__pycache__/
+
 # misc
 .DS_Store
 *.pem

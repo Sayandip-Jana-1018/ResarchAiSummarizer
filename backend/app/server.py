@@ -283,8 +283,8 @@ async def answer_question_with_rag(request: QuestionRequest):
 # Import and include the real-time extraction API router
 try:
     from app.api.realtime_extraction import router as realtime_router
-    app.include_router(realtime_router, prefix="/api/realtime", tags=["Real-time Analysis"])
-    logger.info("Real-time extraction API endpoints registered")
+    app.include_router(realtime_router, prefix="/api", tags=["Real-time Analysis"])
+    logger.info("Registered real-time extraction API router")
 except ImportError as e:
     logger.error(f"Failed to import real-time extraction API: {str(e)}")
 

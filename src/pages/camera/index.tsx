@@ -6,6 +6,8 @@ import { supabase } from '@/lib/supabase';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { useToast } from '@/components/ui/use-toast';
 import GlassCard from '@/components/ui/GlassCard';
+import { useSubscription } from '@/hooks/useSubscription';
+import { createPortal } from 'react-dom';
 
 // Icons
 import { 
@@ -22,7 +24,10 @@ import {
   HiPlay,
   HiPause,
   HiClipboardCopy,
-  HiDownload
+  HiDownload,
+  HiLockClosed,
+  HiOutlineStar,
+  HiChevronDown
 } from 'react-icons/hi';
 import CameraSettings from '@/components/camera/CameraSettings';
 import AnalysisResults from '@/components/camera/AnalysisResults';
@@ -51,6 +56,13 @@ export default function CameraPage() {
   const { user } = useAuth();
   const { themeColor } = useTheme();
   const { toast } = useToast();
+  const { allowedModels, plan } = useSubscription();
+  
+  // Debug subscription info
+  useEffect(() => {
+    console.log('Current subscription plan:', plan);
+    console.log('Allowed models:', allowedModels);
+  }, [plan, allowedModels]);
   
   // State variables
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -60,6 +72,10 @@ export default function CameraPage() {
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showTips, setShowTips] = useState(true);
+  const [showModelDropdown, setShowModelDropdown] = useState(false);
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
   
   // Stats tracking
   const [processingStats, setProcessingStats] = useState<{
@@ -96,6 +112,86 @@ export default function CameraPage() {
   
   // Backend API URL
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+  // Effect to initialize portal container
+  useEffect(() => {
+    // Create portal container if it doesn't exist
+    let container = document.getElementById('dropdown-portal-container');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'dropdown-portal-container';
+      container.style.position = 'fixed';
+      container.style.top = '0';
+      container.style.left = '0';
+      container.style.width = '100%';
+      container.style.height = '100%';
+      container.style.pointerEvents = 'none';
+      container.style.zIndex = '9999';
+      document.body.appendChild(container);
+    }
+    setPortalContainer(container);
+
+    return () => {
+      // Clean up portal container on unmount
+      if (container && document.body.contains(container)) {
+        document.body.removeChild(container);
+      }
+    };
+  }, []);
+
+  // Effect to position the dropdown
+  useEffect(() => {
+    if (showModelDropdown && dropdownRef.current && triggerRef.current && portalContainer) {
+      const triggerRect = triggerRef.current.getBoundingClientRect();
+      
+      // Position the dropdown below the trigger
+      dropdownRef.current.style.position = 'absolute';
+      dropdownRef.current.style.top = `${triggerRect.bottom + window.scrollY}px`;
+      dropdownRef.current.style.left = `${triggerRect.left + window.scrollX}px`;
+      dropdownRef.current.style.width = `${triggerRect.width}px`;
+      dropdownRef.current.style.pointerEvents = 'auto';
+    }
+  }, [showModelDropdown, portalContainer]);
+
+  // Effect to close model dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (showModelDropdown && !target.closest('.model-dropdown-container')) {
+        setShowModelDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showModelDropdown]);
+
+  // Effect to track model changes
+  useEffect(() => {
+    console.log("Current selected model:", selectedModel);
+    console.log("Allowed models:", allowedModels);
+  }, [selectedModel, allowedModels]);
+
+  // Effect to load the previously selected model from localStorage
+  useEffect(() => {
+    const savedModel = localStorage.getItem('camera_selected_model');
+    if (savedModel && allowedModels.includes(savedModel)) {
+      console.log("Loading saved model from localStorage:", savedModel);
+      setSelectedModel(savedModel);
+    }
+  }, [allowedModels]);
+
+  // Effect to set the default model based on subscription
+  useEffect(() => {
+    if (allowedModels.length > 0) {
+      // If current selected model is not allowed, switch to the first allowed model
+      if (!allowedModels.includes(selectedModel)) {
+        setSelectedModel(allowedModels[0]);
+      }
+    }
+  }, [allowedModels, selectedModel]);
 
   // Get available camera devices
   useEffect(() => {
@@ -272,7 +368,14 @@ export default function CameraPage() {
 
   // Process captured image for text extraction and analysis
   const processImage = async (imageData: string) => {
-    if (!imageData) return;
+    if (!imageData) {
+      toast({
+        title: "No image captured",
+        description: "Please capture an image first",
+        variant: "destructive"
+      });
+      return;
+    }
     
     setIsProcessing(true);
     setProcessingProgress(10);
@@ -281,24 +384,45 @@ export default function CameraPage() {
       // Start processing timer
       const startTime = performance.now();
       
-      // Make API request to extract text and analyze
+      // Prepare the image data (remove the data URL prefix)
+      const base64Image = imageData.split(',')[1];
       setProcessingProgress(30);
-      const response = await fetch(`${API_URL}/api/realtime/real-time-analysis`, {
+      
+      // Get the current selected model
+      const currentModel = selectedModel;
+      
+      // Log the current model being used
+      console.log("Processing image with model:", currentModel);
+      
+      // Prepare request body with subscription tier
+      const requestBody = {
+        image: base64Image,
+        model: currentModel,
+        subscription: plan, // Include the user's subscription tier
+        options: {
+          is_realtime: true
+        }
+      };
+      
+      setProcessingProgress(50);
+      
+      // Make API request to extract text and analyze
+      console.log("Sending API request with model:", currentModel);
+      const response = await fetch(`${API_URL}/api/realtime-extract`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          image: imageData,
-          model: selectedModel,
-          options: {
-            length: 'medium',
-            style: 'academic',
-            focus: 'comprehensive',
-            language: 'en'
-          }
-        })
+        body: JSON.stringify(requestBody)
       });
+      
+      console.log("API Request Details:");
+      console.log("URL:", `${API_URL}/api/realtime-extract`);
+      console.log("Method:", "POST");
+      console.log("Headers:", {
+        'Content-Type': 'application/json',
+      });
+      console.log("Body:", requestBody);
       
       setProcessingProgress(70);
       
@@ -326,13 +450,13 @@ export default function CameraPage() {
       updateProcessingStats(
         result.text || '',
         processingTime,
-        selectedModel
+        currentModel
       );
       
       // Show success notification
       toast({
         title: "Analysis Complete",
-        description: `Processed ${result.word_count || 0} words using ${selectedModel}`,
+        description: `Processed ${result.word_count || 0} words using ${currentModel}`,
         variant: "default"
       });
       
@@ -418,7 +542,20 @@ export default function CameraPage() {
   
   // Handle model selection change
   const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setSelectedModel(e.target.value);
+    const newModel = e.target.value;
+    
+    // Check if the model is allowed for the user's subscription
+    if (!allowedModels.includes(newModel)) {
+      toast({
+        title: "Model not available",
+        description: `Your ${plan.toUpperCase()} plan doesn't include access to ${newModel.charAt(0).toUpperCase() + newModel.slice(1)}. Please upgrade your subscription.`,
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    setSelectedModel(newModel);
+    console.log("Model changed via dropdown to:", newModel);
   };
   
   // Handle real-time delay change
@@ -580,34 +717,155 @@ export default function CameraPage() {
             </div>
             
             {/* Model selection */}
-            <div className="p-5">
+            <div className="p-5 z-99">
               <label className="block text-white/90 text-sm mb-3 font-medium">AI Model</label>
-              <div className="relative">
-                <select
-                  value={selectedModel}
-                  onChange={handleModelChange}
-                  className="w-full appearance-none rounded-lg p-3 text-white focus:outline-none transition-all pr-10"
+              
+              {/* Custom Model Dropdown */}
+              <div className="relative model-dropdown-container z-99">
+                {/* Dropdown Trigger Button */}
+                <div 
+                  className="w-full rounded-lg p-3 text-white flex justify-between items-center cursor-pointer"
                   style={{ 
-                    WebkitAppearance: 'none',
-                    backgroundColor: `${themeColor}90`,
-                    borderColor: `${themeColor}60`,
+                    backgroundColor: `rgba(124, 58, 237, 0.5)`,
+                    borderColor: `rgba(124, 58, 237, 0.3)`,
                     borderWidth: '1px',
-                    boxShadow: 'inset 0 0 10px rgba(0,0,0,0.9)'
+                    boxShadow: 'inset 0 0 10px rgba(0,0,0,0.3)'
                   }}
+                  onClick={() => setShowModelDropdown(!showModelDropdown)}
+                  ref={triggerRef}
                 >
-                  <option value="gemini">Google Gemini</option>
-                  <option value="openai">OpenAI GPT</option>
-                  <option value="claude">Anthropic Claude</option>
-                  <option value="mistral">Mistral AI</option>
-                </select>
-                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3">
-                  <HiChartBar 
-                    className="w-4 h-4 rotate-90" 
-                    style={{ color: `${themeColor}` }}
-                  />
+                  <div className="flex items-center">
+                    {selectedModel === 'gemini' && <span className="mr-2">Gemini</span>}
+                    {selectedModel === 'openai' && <span className="mr-2">GPT-4</span>}
+                    {selectedModel === 'claude' && <span className="mr-2">Claude</span>}
+                    {selectedModel === 'mistral' && <span className="mr-2">Mistral</span>}
+                    {allowedModels.includes(selectedModel) && <span className="text-green-400">✓</span>}
+                  </div>
+                  <HiChevronDown className={`w-5 h-5 transition-transform ${showModelDropdown ? 'transform rotate-180' : ''}`} />
                 </div>
+                
+                {/* Dropdown Menu */}
+                {showModelDropdown && portalContainer && (
+                  createPortal(
+                    <div 
+                      className="absolute left-0 right-0 mt-2 rounded-lg overflow-hidden shadow-lg"
+                      style={{ 
+                        backgroundColor: '#1a1a2e',
+                        zIndex: 9999, // Ensure it's above all other elements
+                        position: 'absolute',
+                        maxHeight: '400px',
+                        overflowY: 'auto'
+                      }}
+                      ref={dropdownRef}
+                    >
+                      {/* Bronze Tier */}
+                      <div className="px-4 py-2 bg-black/50 text-yellow-600 font-semibold text-sm">
+                        BRONZE TIER
+                      </div>
+                      <div 
+                        className={`px-4 py-3 flex justify-between items-center hover:bg-purple-900/30 cursor-pointer ${selectedModel === 'gemini' ? 'bg-purple-900/20' : ''}`}
+                        onClick={() => {
+                          setSelectedModel('gemini');
+                          localStorage.setItem('camera_selected_model', 'gemini');
+                          console.log("Selected model changed to gemini via click");
+                          setShowModelDropdown(false);
+                        }}
+                      >
+                        <span>Gemini</span>
+                        {allowedModels.includes('gemini') && <span className="text-green-400">✓</span>}
+                      </div>
+                      
+                      {/* Silver Tier */}
+                      <div className="px-4 py-2 bg-black/50 text-gray-400 font-semibold text-sm">
+                        SILVER TIER
+                      </div>
+                      <div 
+                        className={`px-4 py-3 flex justify-between items-center ${!allowedModels.includes('openai') ? 'opacity-50 cursor-not-allowed' : 'hover:bg-purple-900/30 cursor-pointer'} ${selectedModel === 'openai' ? 'bg-purple-900/20' : ''}`}
+                        onClick={() => {
+                          if (allowedModels.includes('openai')) {
+                            setSelectedModel('openai');
+                            localStorage.setItem('camera_selected_model', 'openai');
+                            console.log("Selected model changed to openai via click");
+                            setShowModelDropdown(false);
+                          } else {
+                            toast({
+                              title: "Model not available",
+                              description: `Your ${plan.toUpperCase()} plan doesn't include access to GPT-4. Please upgrade your subscription.`,
+                              variant: "destructive"
+                            });
+                          }
+                        }}
+                      >
+                        <span>GPT-4</span>
+                        {allowedModels.includes('openai') ? 
+                          <span className="text-green-400">✓</span> : 
+                          <HiLockClosed className="text-gray-500" />
+                        }
+                      </div>
+                      <div 
+                        className={`px-4 py-3 flex justify-between items-center ${!allowedModels.includes('mistral') ? 'opacity-50 cursor-not-allowed' : 'hover:bg-purple-900/30 cursor-pointer'} ${selectedModel === 'mistral' ? 'bg-purple-900/20' : ''}`}
+                        onClick={() => {
+                          if (allowedModels.includes('mistral')) {
+                            setSelectedModel('mistral');
+                            localStorage.setItem('camera_selected_model', 'mistral');
+                            console.log("Selected model changed to mistral via click");
+                            setShowModelDropdown(false);
+                          } else {
+                            toast({
+                              title: "Model not available",
+                              description: `Your ${plan.toUpperCase()} plan doesn't include access to Mistral. Please upgrade your subscription.`,
+                              variant: "destructive"
+                            });
+                          }
+                        }}
+                      >
+                        <span>Mistral</span>
+                        {allowedModels.includes('mistral') ? 
+                          <span className="text-green-400">✓</span> : 
+                          <HiLockClosed className="text-gray-500" />
+                        }
+                      </div>
+                      
+                      {/* Gold Tier */}
+                      <div className="px-4 py-2 bg-black/50 text-yellow-400 font-semibold text-sm">
+                        GOLD TIER
+                      </div>
+                      <div 
+                        className={`px-4 py-3 flex justify-between items-center ${!allowedModels.includes('claude') ? 'opacity-50 cursor-not-allowed' : 'hover:bg-purple-900/30 cursor-pointer'} ${selectedModel === 'claude' ? 'bg-purple-900/20' : ''}`}
+                        onClick={() => {
+                          if (allowedModels.includes('claude')) {
+                            setSelectedModel('claude');
+                            localStorage.setItem('camera_selected_model', 'claude');
+                            console.log("Selected model changed to claude via click");
+                            setShowModelDropdown(false);
+                          } else {
+                            toast({
+                              title: "Model not available",
+                              description: `Your ${plan.toUpperCase()} plan doesn't include access to Claude. Please upgrade your subscription.`,
+                              variant: "destructive"
+                            });
+                          }
+                        }}
+                      >
+                        <span>Claude</span>
+                        {allowedModels.includes('claude') ? 
+                          <span className="text-green-400">✓</span> : 
+                          <HiLockClosed className="text-gray-500" />
+                        }
+                      </div>
+                    </div>
+                  , portalContainer)
+                )}
               </div>
-              <p className="text-white/60 text-xs mt-2">Select the AI model for document analysis</p>
+              
+              <p className="text-white/60 text-xs mt-2">
+                Your plan: <span className="font-semibold capitalize">{plan}</span> • 
+                {allowedModels.length < 4 && (
+                  <span className="ml-1 text-yellow-400 cursor-pointer" onClick={() => router.push('/premium')}>
+                    Upgrade for more models →
+                  </span>
+                )}
+              </p>
             </div>
           </div>
         </GlassCard>

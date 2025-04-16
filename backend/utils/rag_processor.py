@@ -714,7 +714,7 @@ Answer the question based only on the provided context."""
             logger.info(f"Available Gemini models: {available_models}")
             
             # Try to use gemini-1.5-flash or other 1.5 models
-            preferred_models = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-1.5-pro-latest']
+            preferred_models = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro-latest']
             model_name = None
             
             # Find the first available preferred model
